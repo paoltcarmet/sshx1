@@ -1,46 +1,37 @@
 #!/bin/bash
 set -euo pipefail
 
-# Ensure host keys exist
-if [ ! -f /etc/ssh/ssh_host_rsa_key ]; then
-  ssh-keygen -A
-fi
+# Host keys
+if [ ! -f /etc/ssh/ssh_host_rsa_key ]; then ssh-keygen -A; fi
 
-# Update user/pass from env (Cloud Run is stateless)
 : "${SSH_USER:=n4}"
 : "${SSH_PASSWORD:=N4@ssh123}"
+: "${SSH_PORT:=22}"
 echo "${SSH_USER}:${SSH_PASSWORD}" | chpasswd || true
 
-# Hardened minimal sshd (listen only inside container)
-SSHD_CFG="/etc/ssh/sshd_config"
-cat > "$SSHD_CFG" <<EOF
-Port ${SSH_PORT:-22}
+# Minimal sshd (localhost only)
+cat >/etc/ssh/sshd_config <<EOF
+Port ${SSH_PORT}
 ListenAddress 127.0.0.1
-Protocol 2
 PasswordAuthentication yes
-ChallengeResponseAuthentication no
 UsePAM yes
 PermitRootLogin no
 X11Forwarding no
-ClientAliveInterval 120
-ClientAliveCountMax 2
 AllowUsers ${SSH_USER}
 Subsystem sftp /usr/lib/openssh/sftp-server
 EOF
 
 mkdir -p /var/run/sshd
-echo "[WS-SSH] Starting sshd on 127.0.0.1:${SSH_PORT:-22}"
-/usr/sbin/sshd -D -e -f "$SSHD_CFG" &
+/usr/sbin/sshd -D -e -f /etc/ssh/sshd_config &
 SSHD_PID=$!
 
-# Start WS bridge on $PORT with WS_PATH
+# WS bridge (Node server listens on $PORT and serves /healthz=200)
 : "${PORT:=8080}"
 : "${WS_PATH:=/app53}"
 : "${AUTH_KEY:=change-this-key}"
-
-echo "[WS-SSH] Starting WebSocket bridge on :${PORT}${WS_PATH}"
 node /opt/wsproxy/ws-bridge.js &
 BRIDGE_PID=$!
 
-# Wait forever (or until child dies)
-wait $BRIDGE_PID
+# If any child dies, exit (Cloud Run will restart)
+wait -n $SSHD_PID $BRIDGE_PID
+exit $?
