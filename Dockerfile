@@ -1,12 +1,16 @@
 FROM debian:bookworm-slim
 
+# noninteractive apt
 ENV DEBIAN_FRONTEND=noninteractive
+
+# ---- runtime envs (no comments inside) ----
 ENV PORT=8080 \
     WS_PATH=/app53 \
     SSH_USER=n4 \
-    SSH_PASSWORD='N4@ssh123' \
+    SSH_PASSWORD=N4@ssh123 \
     SSH_PORT=22 \
-    AUTH_KEY='change-this-key'   # Optional WS auth
+    AUTH_KEY=change-this-key
+# (AUTH_KEY meaning: optional WS header gate; set real secret via Cloud Run)
 
 # Base packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
